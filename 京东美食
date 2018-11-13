@@ -1,0 +1,88 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as  EC
+from selenium.common.exceptions import TimeoutException
+from pyquery import PyQuery as pq
+import time
+import json
+
+from config import *
+import pymongo
+
+client = pymongo.MongoClient(MONGO_URL)
+db = client[MONGO_DB]
+
+browser = webdriver.Chrome()
+wait = WebDriverWait(browser,10)
+
+def search():
+    try:
+        browser.get('https://www.jingdong.com')
+        browser.maximize_window()#浏览器窗口最大化
+        time.sleep(1)
+        input = wait.until(
+            EC.presence_of_element_located((By.ID,'key'))
+        )
+        submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR,'#search > div > div.form > button > i')))
+        input.send_keys("美食")
+        submit.click()
+        total = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,'#J_bottomPage > span.p-skip > em:nth-child(1) > b')))
+        get_products()
+        return total.text
+    except TimeoutException:
+        return search()
+
+def next_page(page_number):
+    try:
+        js = "window.scrollTo(0,document.body.scrollHeight)"
+        browser.execute_script(js)#滚动条下拉
+        time.sleep(3)
+        input = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '#J_bottomPage > span.p-skip > input'))
+        )
+        submit = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, '#J_bottomPage > span.p-skip > a')))
+        input.clear()
+        input.send_keys(page_number)
+        submit.click()
+        wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR,'#J_bottomPage > span.p-num > a.curr'),str(page_number)))
+        get_products()
+    except TimeoutException:
+        try:
+            next_page(page_number)
+        finally:
+            print("执行异常")
+
+
+def get_products():
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,'#J_goodsList .gl-warp .gl-item')))
+    html = browser.page_source
+    doc = pq(html)
+    items = doc('#J_goodsList .gl-warp .gl-item').items()
+    for item in items:
+        #获取商品信息
+        product = {
+            'image' : item.find('.p-img.img').attr('src'),
+            'price' : item.find('.p-price').text().replace('\n',''),#替换换行符
+            #'deal'成交量
+            'title' : item.find('.p-name-type-2').text().strip().replace('\n',''),
+            'shop' : item.find('.p-shop').text(),
+            #'location'发货地
+        }
+        print(product)
+        save_to_mongo(json.dumps(product,ensure_ascii=False))
+
+def save_to_mongo(result):#保存到数据库
+    try:
+        if db[MONGO_TABLE].insert(result):
+            print('存储到MONGODB成功'+ result)
+    except Exception:
+        print('存储到MONGODB失败'+ result)
+
+def main():
+    total = int(search())
+    for i in range(2, total+1):
+        next_page(i)
+
+if __name__ == '__main__':
+    main()
