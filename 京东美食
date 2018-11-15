@@ -1,4 +1,4 @@
-#存储到数据库部分未成功
+#存储到数据库功能实现
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -8,11 +8,10 @@ from pyquery import PyQuery as pq
 import time
 import json
 
-from config import *
 import pymongo
 
-client = pymongo.MongoClient(MONGO_URL)
-db = client[MONGO_DB]
+client = pymongo.MongoClient('localhost',27017)
+db = client.jingdong
 
 browser = webdriver.Chrome()
 wait = WebDriverWait(browser,10)
@@ -70,15 +69,15 @@ def get_products():
             'shop' : item.find('.p-shop').text(),
             #'location'发货地
         }
-        print(product)
-        save_to_mongo(json.dumps(product,ensure_ascii=False))
+        #print(product)
+        save_to_mongo(product)
 
 def save_to_mongo(result):#保存到数据库
     try:
-        if db[MONGO_TABLE].insert(result):
-            print('存储到MONGODB成功'+ result)
+        if db.product.insert(result):
+            print('存储到MONGODB成功', result)
     except Exception:
-        print('存储到MONGODB失败'+ result)
+        print('存储到MONGODB失败', result)
 
 def main():
     total = int(search())
